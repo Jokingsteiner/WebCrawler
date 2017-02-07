@@ -21,7 +21,7 @@ LOG_HEADER = "[CRAWLER]"
 url_count = 0 if not os.path.exists("successful_urls.txt") else (len(open("successful_urls.txt").readlines()) - 1)
 if url_count < 0:
     url_count = 0
-MAX_LINKS_TO_DOWNLOAD = 20
+MAX_LINKS_TO_DOWNLOAD = 500
 
 @Producer(ProducedLink)
 @GetterSetter(OneUnProcessedGroup)
@@ -30,10 +30,10 @@ class CrawlerFrame(IApplication):
     def __init__(self, frame):
         self.starttime = time()
         # Set app_id <student_id1>_<student_id2>...
-        self.app_id = "48123229"
+        self.app_id = "48123229_71169660"
         # Set user agent string to IR W17 UnderGrad <student_id1>, <student_id2> ...
         # If Graduate studetn, change the UnderGrad part to Grad.
-        self.UserAgentString = "IR W17 Grad 48123229"
+        self.UserAgentString = "IR W17 Grad 48123229, 71169660"
 		
         self.frame = frame
         assert(self.UserAgentString != "")
@@ -88,17 +88,29 @@ def extract_next_links(rawDatas):
     Suggested library: lxml
     '''
     outputLinks = list()
-    absoluteURL = "http://www.ics.uci.edu"
+    # baseURL = "http://www.ics.uci.edu"
     for entryInRaw in rawDatas:
         bsObj = BeautifulSoup(entryInRaw[1], "lxml")
-        links = bsObj.findAll('a', href=True)
+        links = bsObj.findAll('a', href= re.compile("^[^#]+$"))
+        for link in links:
+            absoluteURL = urljoin(entryInRaw[0], link['href']).encode('utf8')
+            # may be don't need this again
+            # if is_valid(absoluteURL):
+            outputLinks.append(absoluteURL)
 
-    for link in links:
-        # print link['href']
-        outputLinks.append((urljoin(absoluteURL, link['href'])).encode('utf8'))
-
-    print outputLinks
+    # with open("processed_urls.txt", "a") as surls:
+    #     for link in outputLinks:
+    #         surls.write("\n".join(link) + "\n")
+    # print outputLinks
     return outputLinks
+
+TRAP_SEGMENTS = {"archive.ics.uci.edu/ml",
+                 "calendar.ics.uci.edu",
+                 "fano.ics.uci.edu",
+                 "cbcl.ics.uci.edu/doku.php/people?do=diff",
+                 "ganglia.ics.uci.edu",
+                 "arcus-3.ics.uci.edu"
+                 }
 
 def is_valid(url):
     '''
@@ -111,6 +123,33 @@ def is_valid(url):
     parsed = urlparse(url)
     if parsed.scheme not in set(["http", "https"]):
         return False
+
+    for trap in TRAP_SEGMENTS:
+        if trap in url:
+            if trap != "":
+                print "filter1_False"
+                return False
+
+    regStrLists = list()
+    # ignore login pages
+    regStrLists.append(r"^.*(=login).*$")
+    # solve continuously ".."
+    regStrLists.append(r"^.*\.{2,}.*$")
+    # deal with "/community/news/press/view_press?id=" infinity loop
+    # and "community/news/articles/view_article?id="
+    regStrLists.append(r"^.*(/community/news/).*(\?id=)\d+/{2,}.*$")
+    # detect if a group of (at least)10 alphanumeric characters(and underscore, slash) repeat in url,
+    # deal with infinity url loop
+    regStrLists.append(r"^.*([\w/]{10,}).*\1.*$")
+
+    count = 0
+    for regex in regStrLists:
+        if re.compile(regex).search(url):
+            print "filter2_False@ "
+            print count
+            return False
+        count += 1
+
     try:
         return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
