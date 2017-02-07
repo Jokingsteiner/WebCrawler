@@ -5,6 +5,8 @@ from spacetime_local.declarations import Producer, GetterSetter, Getter
 from lxml import html,etree
 import re, os
 from time import time
+from bs4 import BeautifulSoup
+from urlparse import urljoin
 
 try:
     # For python 2
@@ -28,13 +30,13 @@ class CrawlerFrame(IApplication):
     def __init__(self, frame):
         self.starttime = time()
         # Set app_id <student_id1>_<student_id2>...
-        self.app_id = ""
+        self.app_id = "48123229"
         # Set user agent string to IR W17 UnderGrad <student_id1>, <student_id2> ...
         # If Graduate studetn, change the UnderGrad part to Grad.
-        self.UserAgentString = None
+        self.UserAgentString = "IR W17 Grad 48123229"
 		
         self.frame = frame
-        assert(self.UserAgentString != None)
+        assert(self.UserAgentString != "")
         assert(self.app_id != "")
         if url_count >= MAX_LINKS_TO_DOWNLOAD:
             self.done = True
@@ -76,7 +78,6 @@ def process_url_group(group, useragentstr):
 STUB FUNCTIONS TO BE FILLED OUT BY THE STUDENT.
 '''
 def extract_next_links(rawDatas):
-    outputLinks = list()
     '''
     rawDatas is a list of tuples -> [(url1, raw_content1), (url2, raw_content2), ....]
     the return of this function should be a list of urls in their absolute form
@@ -86,6 +87,17 @@ def extract_next_links(rawDatas):
 
     Suggested library: lxml
     '''
+    outputLinks = list()
+    absoluteURL = "http://www.ics.uci.edu"
+    for entryInRaw in rawDatas:
+        bsObj = BeautifulSoup(entryInRaw[1], "lxml")
+        links = bsObj.findAll('a', href=True)
+
+    for link in links:
+        # print link['href']
+        outputLinks.append((urljoin(absoluteURL, link['href'])).encode('utf8'))
+
+    print outputLinks
     return outputLinks
 
 def is_valid(url):
@@ -95,6 +107,7 @@ def is_valid(url):
 
     This is a great place to filter out crawler traps.
     '''
+
     parsed = urlparse(url)
     if parsed.scheme not in set(["http", "https"]):
         return False
