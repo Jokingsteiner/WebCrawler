@@ -153,6 +153,7 @@ def is_valid(url):
     # ignore query string over 80 characters
     regStrLists.append(r"^.*\?.{80,}$")
 
+
     # detect if a group of (at least)10 alphanumeric characters(and underscore, slash) repeat in url,
     # deal with infinity url loop
     regStrLists.append(r"^.*([\w/]{10,}).*\1.*$")
