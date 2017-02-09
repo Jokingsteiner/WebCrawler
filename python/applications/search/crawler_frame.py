@@ -5,6 +5,8 @@ from spacetime_local.declarations import Producer, GetterSetter, Getter
 #from lxml import html,etree
 import re, os
 from time import time
+from bs4 import BeautifulSoup
+from urlparse import urljoin
 
 try:
     # For python 2
@@ -28,10 +30,10 @@ class CrawlerFrame(IApplication):
     def __init__(self, frame):
         self.starttime = time()
         # Set app_id <student_id1>_<student_id2>...
-        self.app_id = ""
+        self.app_id = "48123229_71169660"
         # Set user agent string to IR W17 UnderGrad <student_id1>, <student_id2> ...
         # If Graduate studetn, change the UnderGrad part to Grad.
-        self.UserAgentString = None
+        self.UserAgentString = "IR W17 Grad 48123229, 71169660"
 		
         self.frame = frame
         assert(self.UserAgentString != None)
@@ -91,20 +93,27 @@ def extract_next_links(rawDatas):
     Suggested library: lxml
     '''
     for entryInRaw in rawDatas:
+        # that is an error
+        if entryInRaw.http_code >= 400:
+            print ("Error: Code {0}, MSG = {1}").format(entryInRaw.http_code, entryInRaw.error_message)
+            continue
+        # some of the pages have sort features that implemented by redirection and query string
+        # e.g.: http://www.ics.uci.edu/~minhaenl?C=N;O=D
+        if entryInRaw.is_redirected:
+            if entryInRaw.final_url is entryInRaw.url:
+                continue
         bsObj = BeautifulSoup(entryInRaw.content, "lxml")
-        links = bsObj.findAll('a', href= re.compile("^[^#]+$"))
+        links = bsObj.findAll('a', href=re.compile("^[^#]+$"))
         for link in links:
-            absoluteURL = urljoin(entryInRaw.url, link['href']).encode('utf8')
-            # may be don't need this again
-            # if is_valid(absoluteURL):
+            absoluteURL = urljoin(entryInRaw.url, link['href'])
             outputLinks.append(absoluteURL)
+
     return outputLinks
 
 
-TRAP_SEGMENTS = {"archive.ics.uci.edu/ml",
+TRAP_DOMAIN = {"archive.ics.uci.edu/ml",
                  "calendar.ics.uci.edu",
                  "fano.ics.uci.edu",
-                 "cbcl.ics.uci.edu/doku.php/people?do=diff",
                  "ganglia.ics.uci.edu",
                  "arcus-3.ics.uci.edu"
                  }
@@ -116,35 +125,43 @@ def is_valid(url):
 
     This is a great place to filter out crawler traps.
     '''
-parsed = urlparse(url)
+    parsed = urlparse(url)
     if parsed.scheme not in set(["http", "https"]):
         return False
 
-    for trap in TRAP_SEGMENTS:
+    for trap in TRAP_DOMAIN:
         if trap in url:
             if trap != "":
                 print "filter1_False"
                 return False
 
+    # ORDER is IMPORTANT
     regStrLists = list()
-    # ignore login pages
-    regStrLists.append(r"^.*(=login).*$")
+    # ignore some substring
+    regStrLists.append(r"^.*(\/repository\/|=login|php\?|mailto)+.*$")
     # solve continuously ".."
     regStrLists.append(r"^.*\.{2,}.*$")
-    # deal with "/community/news/press/view_press?id=" infinity loop
-    # and "community/news/articles/view_article?id="
-    regStrLists.append(r"^.*(/community/news/).*(\?id=)\d+/{2,}.*$")
+    # # solve "///" 3+
+    regStrLists.append(r"^.*\/{3,}.*$")
+
+
+    # deal with "/community/news/press/view_press?id=222/blahblah" infinity loop
+    # query string should not followed by other path
+    regStrLists.append(r"^.*(\?id=)\d+\/+.*$")
+    # deal with git repository like query
+    regStrLists.append(r"^.*\?.*(diff|version|revision)+.*$")
+    # ignore query string over 80 characters
+    regStrLists.append(r"^.*\?.{80,}$")
+
     # detect if a group of (at least)10 alphanumeric characters(and underscore, slash) repeat in url,
     # deal with infinity url loop
     regStrLists.append(r"^.*([\w/]{10,}).*\1.*$")
 
-    count = 0
-    for regex in regStrLists:
-        if re.compile(regex).search(url):
-            print "filter2_False@ "
-            print count
+    for index in range(len(regStrLists)):
+        if re.compile(regStrLists[index]).search(url):
+            print ("filter2_False @regex#{0}").format(index)
             return False
-        count += 1
+
     try:
         return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
