@@ -2,5 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/python" vcs="Git" />
+    <mapping directory="F:\Users\OneDrive\Documents\WorkFiles\PyChram\WebCrawler\WebCrawler" vcs="Git" />
   </component>
 </project>
