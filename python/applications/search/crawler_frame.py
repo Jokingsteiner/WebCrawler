@@ -93,23 +93,46 @@ def extract_next_links(rawDatas):
     Suggested library: lxml
     '''
     for entryInRaw in rawDatas:
+        # log invalid/valid links fetched from frontiers
+        if is_valid(entryInRaw.url):
+            extract_next_links.validCount += 1
+            if extract_next_links.validCount >= extract_next_links.writeThrehold:
+                updateStatics(extract_next_links.validCount, True)
+                extract_next_links.validCount = 0
+        else:
+            extract_next_links.inValidCount += 1
+            if extract_next_links.inValidCount >= extract_next_links.writeThrehold:
+                updateStatics(extract_next_links.inValidCount, False)
+                extract_next_links.inValidCount = 0
+
         # that is an error
         if entryInRaw.http_code >= 400:
             print ("Error: Code {0}, MSG = {1}").format(entryInRaw.http_code, entryInRaw.error_message)
+            extract_next_links.inValidCount += 1
             continue
         # some of the pages have sort features that implemented by redirection and query string
         # e.g.: http://www.ics.uci.edu/~minhaenl?C=N;O=D
         if entryInRaw.is_redirected:
             if entryInRaw.final_url is entryInRaw.url:
+                extract_next_links.inValidCount += 1
                 continue
+
         bsObj = BeautifulSoup(entryInRaw.content, "lxml")
         links = bsObj.findAll('a', href=re.compile("^[^#]+$"))
+        staticsFile = open("statics.txt", "r")
+
+        print ("I have {0} out links").format(len(links))
+        updateNumOfOutlink(entryInRaw.url, len(links))
         for link in links:
             absoluteURL = urljoin(entryInRaw.url, link['href'])
             outputLinks.append(absoluteURL)
 
     return outputLinks
 
+extract_next_links.inValidCount = 0
+extract_next_links.validCount = 0
+extract_next_links.writeThrehold = 5
+# cbcl.ics.uci.edu
 
 TRAP_DOMAIN = {"archive.ics.uci.edu/ml",
                  "calendar.ics.uci.edu",
@@ -117,7 +140,7 @@ TRAP_DOMAIN = {"archive.ics.uci.edu/ml",
                  "ganglia.ics.uci.edu",
                  "arcus-3.ics.uci.edu"
                  }
-	
+
 def is_valid(url):
     '''
     Function returns True or False based on whether the url has to be downloaded or not.
@@ -125,15 +148,16 @@ def is_valid(url):
 
     This is a great place to filter out crawler traps.
     '''
+
     parsed = urlparse(url)
     if parsed.scheme not in set(["http", "https"]):
         return False
 
-    for trap in TRAP_DOMAIN:
-        if trap in url:
-            if trap != "":
-                print "filter1_False"
-                return False
+    # for trap in TRAP_DOMAIN:
+    #     if trap in url:
+    #         if trap != "":
+    #             print "filter1_False"
+    #             return False
 
     # ORDER is IMPORTANT
     regStrLists = list()
@@ -144,7 +168,6 @@ def is_valid(url):
     # # solve "///" 3+
     regStrLists.append(r"^.*\/{3,}.*$")
 
-
     # deal with "/community/news/press/view_press?id=222/blahblah" infinity loop
     # query string should not followed by other path
     regStrLists.append(r"^.*(\?id=)\d+\/+.*$")
@@ -152,7 +175,6 @@ def is_valid(url):
     regStrLists.append(r"^.*\?.*(diff|version|revision)+.*$")
     # ignore query string over 80 characters
     regStrLists.append(r"^.*\?.{80,}$")
-
 
     # detect if a group of (at least)10 alphanumeric characters(and underscore, slash) repeat in url,
     # deal with infinity url loop
@@ -173,3 +195,42 @@ def is_valid(url):
 
     except TypeError:
         print ("TypeError for ", parsed)
+
+def updateStatics(increaseNum, valid):
+    print "updating statics"
+    staticsFile = open("statics.txt", "r")
+    lines = staticsFile.readlines()
+    if not valid:
+        numOfInvalidLinks = re.sub('[^\d]+', '', lines[5])
+        lines[5] = "Number of Invalid links: " + str(int(numOfInvalidLinks) + increaseNum) + "\n"
+        print lines[5].rstrip()
+    else:
+        numOfInvalidLinks = re.sub('[^\d]+', '', lines[4])
+        lines[4] = "Number of Valid links: " + str(int(numOfInvalidLinks) + increaseNum) + "\n"
+        print "test:" + lines[4].rstrip()
+    staticsFile.close()
+
+    # why the "r+" mode append?????????????? I don't want!
+    staticsFile = open("statics.txt", "w")
+    staticsFile.writelines(lines)
+
+    staticsFile.close()
+
+
+def updateNumOfOutlink(url, newNum):
+    print "updating outlinks"
+    staticsFile = open("statics.txt", "r")
+    lines = staticsFile.readlines()
+    maxNum = re.sub('[^\d]+', '', lines[7])
+    if newNum > int(maxNum):
+        lines[6] = "Page with the most out links: " + url + "\n"
+        lines[7] = "Maximum number of out links: " + str(newNum) + "\n"
+        print lines[7].rstrip()
+    staticsFile.close()
+
+    # why the "r+" mode append?????????????? I don't want!
+    staticsFile = open("statics.txt", "w")
+    staticsFile.writelines(lines)
+
+    staticsFile.close()
+
