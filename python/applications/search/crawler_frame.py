@@ -67,9 +67,11 @@ class CrawlerFrame(IApplication):
 
 def save_count(urls):
     global url_count
-    url_count.update(set(urls))
-    with open("successful_urls.txt", "a") as surls:
-        surls.write(("\n".join(urls) + "\n").encode("utf-8"))
+    urls = set(urls).difference(url_count)
+    url_count.update(urls)
+    if len(urls):
+        with open("successful_urls.txt", "a") as surls:
+            surls.write(("\n".join(urls) + "\n").encode("utf-8"))
 
 def process_url_group(group, useragentstr):
     rawDatas, successfull_urls = group.download(useragentstr, is_valid)
@@ -93,39 +95,43 @@ def extract_next_links(rawDatas):
     Suggested library: lxml
     '''
     for entryInRaw in rawDatas:
-        # log invalid/valid links fetched from frontiers
-        if is_valid(entryInRaw.url):
-            extract_next_links.validCount += 1
-            if extract_next_links.validCount >= extract_next_links.writeThrehold:
-                updateStatics(extract_next_links.validCount, True)
-                extract_next_links.validCount = 0
-        else:
-            extract_next_links.inValidCount += 1
-            if extract_next_links.inValidCount >= extract_next_links.writeThrehold:
-                updateStatics(extract_next_links.inValidCount, False)
-                extract_next_links.inValidCount = 0
+        tokens = re.compile("(//|.ics.uci.edu)").split(entryInRaw.url)
+        # double check if the url is under ics.uci.edu domain
+        if tokens [3] == ".ics.uci.edu":
+            subdomain = tokens[2]
+            if subdomain != "www":
+                updateSubdomainLog(subdomain)
+            # log invalid/valid links fetched from frontiers
+            if is_valid(entryInRaw.url):
+                extract_next_links.validCount += 1
+                if extract_next_links.validCount >= extract_next_links.writeThrehold:
+                    updateStatics(extract_next_links.validCount, True)
+                    extract_next_links.validCount = 0
+            else:
+                extract_next_links.inValidCount += 1
+                if extract_next_links.inValidCount >= extract_next_links.writeThrehold:
+                    updateStatics(extract_next_links.inValidCount, False)
+                    extract_next_links.inValidCount = 0
 
-        # that is an error
-        if entryInRaw.http_code >= 400:
-            print ("Error: Code {0}, MSG = {1}").format(entryInRaw.http_code, entryInRaw.error_message)
-            extract_next_links.inValidCount += 1
-            continue
-        # some of the pages have sort features that implemented by redirection and query string
-        # e.g.: http://www.ics.uci.edu/~minhaenl?C=N;O=D
-        if entryInRaw.is_redirected:
-            if entryInRaw.final_url is entryInRaw.url:
+            # that is an error
+            if entryInRaw.http_code >= 400:
+                print ("Error: Code {0}, MSG = {1}").format(entryInRaw.http_code, entryInRaw.error_message)
                 extract_next_links.inValidCount += 1
                 continue
+            # some of the pages have sort features that implemented by redirection and query string
+            # e.g.: http://www.ics.uci.edu/~minhaenl?C=N;O=D
+            if entryInRaw.is_redirected:
+                if entryInRaw.final_url is entryInRaw.url:
+                    extract_next_links.inValidCount += 1
+                    continue
 
-        bsObj = BeautifulSoup(entryInRaw.content, "lxml")
-        links = bsObj.findAll('a', href=re.compile("^[^#]+$"))
-        staticsFile = open("statics.txt", "r")
-
-        print ("I have {0} out links").format(len(links))
-        updateNumOfOutlink(entryInRaw.url, len(links))
-        for link in links:
-            absoluteURL = urljoin(entryInRaw.url, link['href'])
-            outputLinks.append(absoluteURL)
+            bsObj = BeautifulSoup(entryInRaw.content, "lxml")
+            links = bsObj.findAll('a', href=re.compile("^[^#]+$"))
+            print ("I have {0} out links").format(len(links))
+            updateNumOfOutlink(entryInRaw.url, len(links))
+            for link in links:
+                absoluteURL = urljoin(entryInRaw.url, link['href'])
+                outputLinks.append(absoluteURL)
 
     return outputLinks
 
@@ -148,7 +154,6 @@ def is_valid(url):
 
     This is a great place to filter out crawler traps.
     '''
-
     parsed = urlparse(url)
     if parsed.scheme not in set(["http", "https"]):
         return False
@@ -162,7 +167,7 @@ def is_valid(url):
     # ORDER is IMPORTANT
     regStrLists = list()
     # ignore some substring
-    regStrLists.append(r"^.*(\/repository\/|=login|php\?|mailto)+.*$")
+    regStrLists.append(r"^.*(\/repository\/|=login|php\?|mailto|\/\.)+.*$")
     # solve continuously ".."
     regStrLists.append(r"^.*\.{2,}.*$")
     # # solve "///" 3+
@@ -196,18 +201,28 @@ def is_valid(url):
     except TypeError:
         print ("TypeError for ", parsed)
 
+def eHandlerForStatics():
+    newLines = "\*\n* Statics for WebCrawler\n*/\n\nNumber of Valid links: 0\nNumber of Invalid links: 0\nPage with the most out links: \nMaximum number of out links: 0\n"
+    staticsFile = open("statics.txt", "w")
+    staticsFile.write(newLines)
+    staticsFile.close()
+
 def updateStatics(increaseNum, valid):
     print "updating statics"
-    staticsFile = open("statics.txt", "r")
+    try:
+        staticsFile = open("statics.txt", "r")
+    except:
+        eHandlerForStatics()
+        staticsFile = open("statics.txt", "r")
     lines = staticsFile.readlines()
     if not valid:
         numOfInvalidLinks = re.sub('[^\d]+', '', lines[5])
         lines[5] = "Number of Invalid links: " + str(int(numOfInvalidLinks) + increaseNum) + "\n"
-        print lines[5].rstrip()
+        # print lines[5].rstrip()
     else:
         numOfInvalidLinks = re.sub('[^\d]+', '', lines[4])
         lines[4] = "Number of Valid links: " + str(int(numOfInvalidLinks) + increaseNum) + "\n"
-        print "test:" + lines[4].rstrip()
+        # print "test:" + lines[4].rstrip()
     staticsFile.close()
 
     # why the "r+" mode append?????????????? I don't want!
@@ -219,7 +234,11 @@ def updateStatics(increaseNum, valid):
 
 def updateNumOfOutlink(url, newNum):
     print "updating outlinks"
-    staticsFile = open("statics.txt", "r")
+    try:
+        staticsFile = open("statics.txt", "r")
+    except:
+        eHandlerForStatics()
+        staticsFile = open("statics.txt", "r")
     lines = staticsFile.readlines()
     maxNum = re.sub('[^\d]+', '', lines[7])
     if newNum > int(maxNum):
@@ -233,4 +252,36 @@ def updateNumOfOutlink(url, newNum):
     staticsFile.writelines(lines)
 
     staticsFile.close()
+
+def updateSubdomainLog(subdomain):
+    print "updating subdomain"
+    try:
+        subdomainFile = open("log_visited_subdomain.txt", "r")
+    except:
+        subdomainFile = open("log_visited_subdomain.txt", "w")
+        subdomainFile.close()
+        subdomainFile = open("log_visited_subdomain.txt", "r")
+    lines = subdomainFile.readlines()
+    notFound = True
+    subdomainDict = dict()
+    for line in lines:
+        item = re.sub('[^a-zA-Z]+', '', line)
+        freq = re.sub('[^\d]+', '', line)
+        # print "item:{0}".format(item)
+        # print "freq:{0}".format(freq)
+        if subdomain == item:
+            notFound = False
+            updatedFreq = int(freq) + 1
+        else:
+            updatedFreq = int(freq)
+        subdomainDict[item] = updatedFreq
+
+    if notFound:
+        subdomainDict[subdomain] = int(1)
+    subdomainFile.close()
+
+    subdomainFile = open("log_visited_subdomain.txt", "w")
+    for key in sorted(subdomainDict.iterkeys()):
+        writeline = key.ljust(30) + str(subdomainDict[key]) +"\n"
+        subdomainFile.write(writeline)
 
