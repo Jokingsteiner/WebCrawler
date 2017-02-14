@@ -7,6 +7,7 @@ import re, os
 from time import time
 from bs4 import BeautifulSoup
 from urlparse import urljoin
+import Levenshtein
 
 try:
     # For python 2
@@ -103,15 +104,18 @@ def extract_next_links(rawDatas):
                 updateSubdomainLog(subdomain)
             # log invalid/valid links fetched from frontiers
             if is_valid(entryInRaw.url):
+                # logValidLinks(entryInRaw.url);
                 extract_next_links.validCount += 1
                 if extract_next_links.validCount >= extract_next_links.writeThrehold:
                     updateStatics(extract_next_links.validCount, True)
                     extract_next_links.validCount = 0
             else:
+                print "still invalid>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
                 extract_next_links.inValidCount += 1
-                if extract_next_links.inValidCount >= extract_next_links.writeThrehold:
-                    updateStatics(extract_next_links.inValidCount, False)
-                    extract_next_links.inValidCount = 0
+
+            if extract_next_links.inValidCount >= extract_next_links.writeThrehold:
+                updateStatics(extract_next_links.inValidCount, False)
+                extract_next_links.inValidCount = 0
 
             # that is an error
             if entryInRaw.http_code >= 400:
@@ -126,6 +130,29 @@ def extract_next_links(rawDatas):
                     continue
 
             bsObj = BeautifulSoup(entryInRaw.content, "lxml")
+            bsObjStr = str(bsObj)
+            try:
+                if bsObjStr != "":
+                    start = bsObjStr.index("<html")
+                    end = bsObjStr.index("</html>", start) + len("</html>")
+                    newContent = bsObjStr[start:end]
+                    compareContent(newContent)
+            except ValueError:
+                print "Error String: " + bsObjStr
+                continue
+
+            # # convert a whole string of bsObj into list
+            # bsObjStrList = str(bsObj).rstrip().split('\n')
+            # # add "\n" character to make this new content similar to file
+            # # otherwise even the new content is 100% matching the old one, missing "\n" will cause unmatching
+            # bsObjFileType = list()
+            # for line in bsObjStrList:
+            #     bsObjFileType.append(line + "\n")
+            # contentList = findContent(bsObjFileType)
+            # if contentList != "":
+            #     contentFile.write("\n\nFor Readability\n\n")
+            #     contentFile.writelines(contentList)
+
             links = bsObj.findAll('a', href=re.compile("^[^#]+$"))
             print ("I have {0} out links").format(len(links))
             updateNumOfOutlink(entryInRaw.url, len(links))
@@ -201,6 +228,64 @@ def is_valid(url):
     except TypeError:
         print ("TypeError for ", parsed)
 
+
+def compareContent(bsContent):
+    print "Comparing"
+    try:
+        contentFile = open("contents.txt", "r")
+    except:
+        contentFile = open("contents.txt", "w")
+        contentFile.close()
+        contentFile = open("contents.txt", "r")
+    allOldContent = findContent(contentFile)
+    contentFile.close()
+    needUpdate = False
+    ret = False
+    for content in allOldContent:
+        ratio = Levenshtein.ratio(bsContent, content)
+        # matching threshold is set to 90%, over 90% means "equal"
+        if ratio > 0.9:
+            print "Similarity Ratio is {0}".format(ratio)
+            # print ("content in File: {0}, bsContent: {1}").format(content, bsContent)
+            ret = True
+            # if matching, but the similarity is less than 95%, should add new content in the history
+            if ratio < 0.95:
+                needUpdate = True
+            break
+        else:
+            ret = False
+    # finnish loop, check if we need update content history or not
+    # FIXME
+    contentFile = open("testFile.txt", "a")
+    contentFile.write(bsContent + "\n")
+    contentFile.close()
+    if needUpdate or (ret == False):
+        print "Updating Content History"
+        contentFile = open("contents.txt", "a")
+        contentFile.write("\n\nFor Readability\n\n")
+        contentFile.write(bsContent + "\n")
+        contentFile.close()
+    return ret
+
+
+def findContent(file):
+    parsing = False
+    contentCount = -1
+    contentList = list()
+    for line in file:
+        if not parsing:
+            if line.startswith("<html"):
+                contentCount += 1
+                contentList.append(line)
+                parsing = True
+        elif line.startswith("</html>"):
+            contentList[contentCount] = contentList[contentCount] + line
+            parsing = False
+        else:
+            contentList[contentCount] = contentList[contentCount] + line
+    return contentList
+
+
 def eHandlerForStatics():
     newLines = "\*\n* Statics for WebCrawler\n*/\n\nNumber of Valid links: 0\nNumber of Invalid links: 0\nPage with the most out links: \nMaximum number of out links: 0\n"
     staticsFile = open("statics.txt", "w")
@@ -220,15 +305,14 @@ def updateStatics(increaseNum, valid):
         lines[5] = "Number of Invalid links: " + str(int(numOfInvalidLinks) + increaseNum) + "\n"
         # print lines[5].rstrip()
     else:
-        numOfInvalidLinks = re.sub('[^\d]+', '', lines[4])
-        lines[4] = "Number of Valid links: " + str(int(numOfInvalidLinks) + increaseNum) + "\n"
+        numOfValidLinks = re.sub('[^\d]+', '', lines[4])
+        lines[4] = "Number of Valid links: " + str(int(numOfValidLinks) + increaseNum) + "\n"
         # print "test:" + lines[4].rstrip()
     staticsFile.close()
 
     # why the "r+" mode append?????????????? I don't want!
     staticsFile = open("statics.txt", "w")
     staticsFile.writelines(lines)
-
     staticsFile.close()
 
 
@@ -250,8 +334,8 @@ def updateNumOfOutlink(url, newNum):
     # why the "r+" mode append?????????????? I don't want!
     staticsFile = open("statics.txt", "w")
     staticsFile.writelines(lines)
-
     staticsFile.close()
+
 
 def updateSubdomainLog(subdomain):
     print "updating subdomain"
@@ -284,4 +368,9 @@ def updateSubdomainLog(subdomain):
     for key in sorted(subdomainDict.iterkeys()):
         writeline = key.ljust(30) + str(subdomainDict[key]) +"\n"
         subdomainFile.write(writeline)
+
+
+def logValidLinks(url):
+        validLinkFile = open("log_valid_links.txt", "a+")
+        validLinkFile.write(url + "\n")
 
