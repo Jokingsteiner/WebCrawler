@@ -103,7 +103,7 @@ def extract_next_links(rawDatas):
     '''
     for entryInRaw in rawDatas:
         tokens = re.compile("(//|.ics.uci.edu)").split(entryInRaw.url)
-        if  re.match(".*\.(txt|css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4" \
+        if re.match(".*\.(txt|css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4" \
                  + "|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf|pps|ppt" \
                  + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
                  + "|thmx|mso|arff|rtf|jar|csv" \
@@ -159,6 +159,7 @@ def extract_next_links(rawDatas):
 
             # skip this url if it is considered duplicate as what we processed before
             if duplicate:
+                print "Content Duplicate Link: " + entryInRaw.url
                 inValidCount += 1
                 continue
 
@@ -253,31 +254,36 @@ def compareContent(bsContent):
     contentFile.close()
     needUpdate = False
     ret = False
+    maxMatch = 0
     for content in allOldContent:
         ratio = Levenshtein.ratio(bsContent, content)
-        # matching threshold is set to 85%, over 90% means "equal"
+        if ratio > maxMatch:
+            maxMatch = ratio
+        # matching threshold is set to 85%, over 85% means "equal"
         if ratio > 0.85:
-            print "* Similarity Ratio is {0}".format(ratio)
+            print "* Found Duplicate! {:0.2f}% Similar".format(ratio * 100)
             # print ("content in File: {0}, bsContent: {1}").format(content, bsContent)
             ret = True
-            # if matching, but the similarity is less than 95%, should add new content in the history
-            if ratio < 0.95:
+            # if matching, but if the similarity is less than 90%, should add new content into the history
+            if ratio < 0.9:
                 needUpdate = True
             break
         else:
-            print "* No Duplicate Found"
             ret = False
+
+    if ret == False:
+        print "* No Duplicate Found, Highest Matching is {:0.2f}%".format(maxMatch * 100)
     # finnish loop, check if we need update content history or not
     if needUpdate or (ret == False):
-        print "* Updating Content History Needed"
+        # print "* Updating Content History Needed"
         contentFile = open("visited_contents.txt", "a")
         contentFile.write("\n\nFor Readability\n\n")
         contentFile.write(bsContent + "\n")
         contentFile.close()
     endTime = time()
     # print ("* allOldContent has {0} contents in cache").format(len(allOldContent))
-    # if contents cache exceed 100 items, clear the file, ignore the one we just added
-    if len(allOldContent) > 20:
+    # if contents cache exceed 30 items, clear the file, ignore the one we just added
+    if len(allOldContent) > 30:
         contentFile.close()
         contentFile = open("visited_contents.txt", "w")
         contentFile.write("0")
@@ -337,7 +343,6 @@ def updateStatics(increaseNum, valid):
 
 
 def updateNumOfOutlink(url, newNum):
-    print "* Updating Outlinks"
     try:
         staticsFile = open("statics.txt", "r")
     except:
@@ -346,6 +351,7 @@ def updateNumOfOutlink(url, newNum):
     lines = staticsFile.readlines()
     maxNum = re.sub('[^\d]+', '', lines[7])
     if newNum > int(maxNum):
+        print "* Updating Outlinks"
         lines[6] = "Page with the most out links: " + url + "\n"
         lines[7] = "Maximum number of out links: " + str(newNum) + "\n"
         print lines[7].rstrip()
