@@ -9,6 +9,9 @@ from bs4 import BeautifulSoup
 from urlparse import urljoin
 import Levenshtein
 
+validCount = 0
+inValidCount = 0
+
 try:
     # For python 2
     from urlparse import urlparse, parse_qs
@@ -84,6 +87,9 @@ def process_url_group(group, useragentstr):
 STUB FUNCTIONS TO BE FILLED OUT BY THE STUDENT.
 '''
 def extract_next_links(rawDatas):
+    global validCount
+    global inValidCount
+    writeThrehold = 5
     outputLinks = list()
     '''
     rawDatas is a list of objs -> [raw_content_obj1, raw_content_obj2, ....]
@@ -97,64 +103,67 @@ def extract_next_links(rawDatas):
     '''
     for entryInRaw in rawDatas:
         tokens = re.compile("(//|.ics.uci.edu)").split(entryInRaw.url)
+        if  re.match(".*\.(txt|css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4" \
+                 + "|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf|pps|ppt" \
+                 + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
+                 + "|thmx|mso|arff|rtf|jar|csv" \
+                 + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", entryInRaw.url.lower()):
+            inValidCount += 1
+            continue
+
         # double check if the url is under ics.uci.edu domain
         if tokens [3] == ".ics.uci.edu":
             subdomain = tokens[2]
             if subdomain != "www":
-                updateSubdomainLog(subdomain)
+                updateSubdomainLog(subdomain.lower())
             # log invalid/valid links fetched from frontiers
             if is_valid(entryInRaw.url):
                 # logValidLinks(entryInRaw.url);
-                extract_next_links.validCount += 1
-                if extract_next_links.validCount >= extract_next_links.writeThrehold:
-                    updateStatics(extract_next_links.validCount, True)
-                    extract_next_links.validCount = 0
+                validCount += 1
+                if validCount >= writeThrehold:
+                    updateStatics(validCount, True)
+                    validCount = 0
             else:
                 print "still invalid>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
-                extract_next_links.inValidCount += 1
+                inValidCount += 1
 
-            if extract_next_links.inValidCount >= extract_next_links.writeThrehold:
-                updateStatics(extract_next_links.inValidCount, False)
-                extract_next_links.inValidCount = 0
+            if inValidCount >= writeThrehold:
+                updateStatics(inValidCount, False)
+                inValidCount = 0
 
             # that is an error
             if entryInRaw.http_code >= 400:
                 print ("Error: Code {0}, MSG = {1}").format(entryInRaw.http_code, entryInRaw.error_message)
-                extract_next_links.inValidCount += 1
+                inValidCount += 1
                 continue
             # some of the pages have sort features that implemented by redirection and query string
             # e.g.: http://www.ics.uci.edu/~minhaenl?C=N;O=D
             if entryInRaw.is_redirected:
                 if entryInRaw.final_url is entryInRaw.url:
-                    extract_next_links.inValidCount += 1
+                    inValidCount += 1
                     continue
 
             bsObj = BeautifulSoup(entryInRaw.content, "lxml")
-            bsObjStr = str(bsObj)
+            bsObjStr = str(bsObj).lower()
+            duplicate = False
             try:
-                if bsObjStr != "":
-                    start = bsObjStr.index("<html")
-                    end = bsObjStr.index("</html>", start) + len("</html>")
-                    newContent = bsObjStr[start:end]
-                    compareContent(newContent)
+                # if bsObjStr != "":
+                start = bsObjStr.index("<html")
+                end = bsObjStr.index("</html>", start) + len("</html>")
+                newContent = bsObjStr[start:end]
+                duplicate = compareContent(newContent)
             except ValueError:
-                print "Error String: " + bsObjStr
+                print "* Error String: " + bsObjStr
+                inValidCount += 1
                 continue
 
-            # # convert a whole string of bsObj into list
-            # bsObjStrList = str(bsObj).rstrip().split('\n')
-            # # add "\n" character to make this new content similar to file
-            # # otherwise even the new content is 100% matching the old one, missing "\n" will cause unmatching
-            # bsObjFileType = list()
-            # for line in bsObjStrList:
-            #     bsObjFileType.append(line + "\n")
-            # contentList = findContent(bsObjFileType)
-            # if contentList != "":
-            #     contentFile.write("\n\nFor Readability\n\n")
-            #     contentFile.writelines(contentList)
+            # skip this url if it is considered duplicate as what we processed before
+            if duplicate:
+                inValidCount += 1
+                continue
 
             links = bsObj.findAll('a', href=re.compile("^[^#]+$"))
-            print ("I have {0} out links").format(len(links))
+            # print ("I have {0} out links").format(len(links))
             updateNumOfOutlink(entryInRaw.url, len(links))
             for link in links:
                 absoluteURL = urljoin(entryInRaw.url, link['href'])
@@ -162,19 +171,17 @@ def extract_next_links(rawDatas):
 
     return outputLinks
 
-extract_next_links.inValidCount = 0
-extract_next_links.validCount = 0
-extract_next_links.writeThrehold = 5
-# cbcl.ics.uci.edu
-
-TRAP_DOMAIN = {"archive.ics.uci.edu/ml",
-                 "calendar.ics.uci.edu",
-                 "fano.ics.uci.edu",
-                 "ganglia.ics.uci.edu",
-                 "arcus-3.ics.uci.edu"
-                 }
+# TRAP_DOMAIN = {"archive.ics.uci.edu/ml",
+#                  "calendar.ics.uci.edu",
+#                  "fano.ics.uci.edu",
+#                  "ganglia.ics.uci.edu",
+#                  "arcus-3.ics.uci.edu",
+#                  "cbcl.ics.uci.edu"
+#                  }
 
 def is_valid(url):
+    global validCount
+    global inValidCount
     '''
     Function returns True or False based on whether the url has to be downloaded or not.
     Robot rules and duplication rules are checked separately.
@@ -188,13 +195,13 @@ def is_valid(url):
     # for trap in TRAP_DOMAIN:
     #     if trap in url:
     #         if trap != "":
-    #             print "filter1_False"
+    #             print "* Filter1 failed"
     #             return False
 
     # ORDER is IMPORTANT
     regStrLists = list()
     # ignore some substring
-    regStrLists.append(r"^.*(\/repository\/|=login|php\?|mailto|\/\.)+.*$")
+    regStrLists.append(r"^.*(=login|php\?|mailto|\/\.)+.*$")
     # solve continuously ".."
     regStrLists.append(r"^.*\.{2,}.*$")
     # # solve "///" 3+
@@ -204,9 +211,9 @@ def is_valid(url):
     # query string should not followed by other path
     regStrLists.append(r"^.*(\?id=)\d+\/+.*$")
     # deal with git repository like query
-    regStrLists.append(r"^.*\?.*(diff|version|revision)+.*$")
+    regStrLists.append(r"^.*\?.*(\/repository\/|diff|version|revision)+.*$")
     # ignore query string over 80 characters
-    regStrLists.append(r"^.*\?.{80,}$")
+    # regStrLists.append(r"^.*\?.{80,}$")
 
     # detect if a group of (at least)10 alphanumeric characters(and underscore, slash) repeat in url,
     # deal with infinity url loop
@@ -214,7 +221,7 @@ def is_valid(url):
 
     for index in range(len(regStrLists)):
         if re.compile(regStrLists[index]).search(url):
-            print ("filter2_False @regex#{0}").format(index)
+            print ("* Filter2 failed @regex#{0}").format(index)
             return False
 
     try:
@@ -230,22 +237,27 @@ def is_valid(url):
 
 
 def compareContent(bsContent):
-    print "Comparing"
+    startTime = time()
+    print "* Comparing Contents By Levenshtein Distance..."
     try:
-        contentFile = open("contents.txt", "r")
+        contentFile = open("visited_contents.txt", "r")
     except:
-        contentFile = open("contents.txt", "w")
+        contentFile = open("visited_contents.txt", "w")
+        # contentFile.write("0")
         contentFile.close()
-        contentFile = open("contents.txt", "r")
+        contentFile = open("visited_contents.txt", "r")
+    # numOfContent = int(contentFile.readline().strip())
+
+
     allOldContent = findContent(contentFile)
     contentFile.close()
     needUpdate = False
     ret = False
     for content in allOldContent:
         ratio = Levenshtein.ratio(bsContent, content)
-        # matching threshold is set to 90%, over 90% means "equal"
-        if ratio > 0.9:
-            print "Similarity Ratio is {0}".format(ratio)
+        # matching threshold is set to 85%, over 90% means "equal"
+        if ratio > 0.85:
+            print "* Similarity Ratio is {0}".format(ratio)
             # print ("content in File: {0}, bsContent: {1}").format(content, bsContent)
             ret = True
             # if matching, but the similarity is less than 95%, should add new content in the history
@@ -253,18 +265,26 @@ def compareContent(bsContent):
                 needUpdate = True
             break
         else:
+            print "* No Duplicate Found"
             ret = False
     # finnish loop, check if we need update content history or not
-    # FIXME
-    contentFile = open("testFile.txt", "a")
-    contentFile.write(bsContent + "\n")
-    contentFile.close()
     if needUpdate or (ret == False):
-        print "Updating Content History"
-        contentFile = open("contents.txt", "a")
+        print "* Updating Content History Needed"
+        contentFile = open("visited_contents.txt", "a")
         contentFile.write("\n\nFor Readability\n\n")
         contentFile.write(bsContent + "\n")
         contentFile.close()
+    endTime = time()
+    # print ("* allOldContent has {0} contents in cache").format(len(allOldContent))
+    # if contents cache exceed 100 items, clear the file, ignore the one we just added
+    if len(allOldContent) > 20:
+        contentFile.close()
+        contentFile = open("visited_contents.txt", "w")
+        contentFile.write("0")
+        contentFile.close()
+        print "* Contents Cache Reset."
+
+    print("* Comparing Done! Time Elapsed: {0}s").format(endTime - startTime)
     return ret
 
 
@@ -293,7 +313,7 @@ def eHandlerForStatics():
     staticsFile.close()
 
 def updateStatics(increaseNum, valid):
-    print "updating statics"
+    print "* Updating Statics"
     try:
         staticsFile = open("statics.txt", "r")
     except:
@@ -317,7 +337,7 @@ def updateStatics(increaseNum, valid):
 
 
 def updateNumOfOutlink(url, newNum):
-    print "updating outlinks"
+    print "* Updating Outlinks"
     try:
         staticsFile = open("statics.txt", "r")
     except:
@@ -338,7 +358,7 @@ def updateNumOfOutlink(url, newNum):
 
 
 def updateSubdomainLog(subdomain):
-    print "updating subdomain"
+    print "* Updating Subdomain"
     try:
         subdomainFile = open("log_visited_subdomain.txt", "r")
     except:

@@ -27,7 +27,7 @@ class Simulation(object):
         '''
         Constructor
         '''
-        frame_c = frame(address = "http://" + address + ":" + str(port) + "/", time_step = 1000)
+        frame_c = frame(address = "http://" + address + ":" + str(port) + "/", time_step = 3000)
         frame_c.attach_app(CrawlerFrame(frame_c))
 
         frame_c.run_async()
