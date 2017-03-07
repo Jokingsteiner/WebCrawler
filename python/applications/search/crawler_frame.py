@@ -52,7 +52,7 @@ class CrawlerFrame(IApplication):
         self.frame.add(l)
 
     def update(self):
-        for g in self.frame.get(OneUnProcessedGroup):
+        for g in self.frame.get_new(OneUnProcessedGroup):
             print "Got a Group"
             outputLinks, urlResps = process_url_group(g, self.UserAgentString)
             for urlResp in urlResps:
@@ -167,7 +167,10 @@ def extract_next_links(rawDatas):
             # print ("I have {0} out links").format(len(links))
             updateNumOfOutlink(entryInRaw.url, len(links))
             for link in links:
-                absoluteURL = urljoin(entryInRaw.url, link['href'])
+                if entryInRaw.is_redirected:
+                    absoluteURL = urljoin(entryInRaw.final_url, link['href'])
+                else:
+                    absoluteURL = urljoin(entryInRaw.url, link['href'])
                 outputLinks.append(absoluteURL)
 
     return outputLinks
@@ -394,6 +397,7 @@ def updateSubdomainLog(subdomain):
     for key in sorted(subdomainDict.iterkeys()):
         writeline = key.ljust(30) + str(subdomainDict[key]) +"\n"
         subdomainFile.write(writeline)
+    subdomainFile.close()
 
 
 def logValidLinks(url):
